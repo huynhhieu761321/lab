@@ -1,0 +1,86 @@
+pipeline {
+    agent { label 'abc' }
+
+    environment {
+        IMAGE_NAME = 'my-nginx'
+        IMAGE_TAG = 'prd'
+        FULL_IMAGE = "your-docker-registry/my-nginx:${IMAGE_TAG}"
+        ARGOCD_APP = 'my-nginx-app'
+        ARGOCD_SERVER = 'argocd.example.com'
+        ARGOCD_AUTH_TOKEN = credentials('argocd-token') // Secret text
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build & Push Docker Image') {
+            steps {
+                sh "docker build -t ${FULL_IMAGE} ."
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh """
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push ${FULL_IMAGE}
+                    """
+                }
+            }
+        }
+
+        stage('Create Argo CD App Manifest') {
+            steps {
+                script {
+                    def appManifest = """
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ${ARGOCD_APP}
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/your-repo.git
+    targetRevision: prd
+    path: manifests/
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: my-nginx
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+"""
+
+                    writeFile file: 'my-app.yaml', text: appManifest
+                }
+
+                echo "📄 Applying Argo CD Application manifest to EKS..."
+                sh "kubectl apply -f my-app.yaml -n argocd"
+            }
+        }
+
+        stage('Sync Argo CD App') {
+            steps {
+                echo "🔁 Triggering Argo CD sync..."
+                sh """
+                    argocd login ${ARGOCD_SERVER} --insecure --auth-token ${ARGOCD_AUTH_TOKEN}
+                    argocd app sync ${ARGOCD_APP}
+                    argocd app wait ${ARGOCD_APP} --health --timeout 300
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Deployment complete."
+        }
+        failure {
+            echo "❌ Deployment failed."
+        }
+    }
+}
