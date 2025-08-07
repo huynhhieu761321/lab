@@ -1,9 +1,13 @@
-# Use the official NGINX image
+# Use the official NGINX base image
 FROM nginx:alpine
 
-# Remove the default NGINX landing page
-RUN rm /usr/share/nginx/html/*
+# Remove default nginx index
+RUN rm /usr/share/nginx/html/index.html
 
-# Copy custom index.html into NGINX's html folder
+# Copy your custom index.html
 COPY index.html /usr/share/nginx/html/
 
+# Expose port 80
+EXPOSE 80
+
+# Start NGINX (already default command in base image)
