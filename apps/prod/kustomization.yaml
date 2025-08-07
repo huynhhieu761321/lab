@@ -1,0 +1,8 @@
+bases:
+  - ../base
+images:
+  - name: your-docker-registry/my-nginx
+    newTag: prod
+replicas:
+  - name: my-nginx
+    count: 3

@@ -1,0 +1,5 @@
+bases:
+  - ../base
+images:
+  - name: your-docker-registry/my-nginx
+    newTag: dev
